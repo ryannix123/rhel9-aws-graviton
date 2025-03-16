@@ -54,6 +54,21 @@ Open this URL in your browser – **no SSL errors, fully encrypted!** 🔒
 
 ---
 
+## **🐳 Why Use Podman for Containerized Applications?**
+
+Podman is a **secure, lightweight, and daemonless** container engine designed for running, managing, and deploying containers. Unlike Docker, it does **not require a background daemon**, making it **more secure and resource-efficient**.
+
+### **🔹 Key Benefits of Using Podman**
+✅ **Rootless Security** – Run containers as a non-root user, **reducing attack surfaces** and security risks.  
+✅ **Daemonless Architecture** – No always-running service, leading to **lower memory overhead** and fewer attack vectors.  
+✅ **Seamless Docker Compatibility** – Use existing **Dockerfiles** and **OCI-compliant** images without modification.  
+✅ **Kubernetes-Ready** – Easily generate Kubernetes YAML from running containers, enabling a **smooth transition to Kubernetes**.  
+✅ **Enterprise-Grade Performance** – Optimized for **RHEL**, ensuring **stability, security, and reliability**.
+
+By using **Podman on RHEL 9 Graviton**, you get a **lightweight, efficient, and secure** containerized application platform **without extra licensing costs** or unnecessary dependencies.  
+
+---
+
 ## **🚀 Why You’ll Love This Deployment**
 💰 **Lower AWS bills** – Get **Graviton’s price-performance advantage** without sacrificing security or performance.  
 🔐 **Enterprise-grade security** – Red Hat’s trusted ecosystem meets AWS’s cloud-native security.  
