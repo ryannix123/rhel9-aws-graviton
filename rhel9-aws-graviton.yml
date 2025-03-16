@@ -1,0 +1,188 @@
+- name: Deploy RHEL 9 Graviton instances on AWS with Podman, Load Balancer, and Red Hat Registration
+  hosts: localhost
+  gather_facts: false
+  vars:
+    aws_region: "us-east-2"
+    instance_type: "t4g.small"
+    ami_id: "ami-0f33ecdcc66016a2c"  # Replace with latest RHEL 9 Graviton AMI
+    key_name: "my-keypair"
+    security_group_name: "rhel9-sg"
+    trusted_ssh_cidr: "203.0.113.0/24"  # Replace with your trusted IP range
+    vpc_cidr: "10.0.0.0/16"
+    ssh_public_key_path: "~/.ssh/my-public-key.pub"  # Replace with your actual public key path
+
+    # Red Hat Subscription Manager (RHSM) Credentials
+    rhsm_username: "your-rhsm-username"
+    rhsm_password: "your-rhsm-password"
+    rhsm_pool_id: "your-rhsm-pool-id"  # Get from 'subscription-manager list --available'
+
+    # AWS Certificate Manager (ACM) for ALB SSL
+    certificate_domain: "*.elb.amazonaws.com"  # AWS ALB default domain
+    certificate_validation_method: "DNS"
+
+    subnets:
+      - az: "us-east-2a"
+        cidr: "10.0.1.0/24"
+      - az: "us-east-2b"
+        cidr: "10.0.2.0/24"
+      - az: "us-east-2c"
+        cidr: "10.0.3.0/24"
+    
+    # Container Configuration
+    container_registry: "myregistry.com"
+    registry_username: "myuser"
+    registry_password: "mypassword"
+    container_image: "myregistry.com/my-app:latest"
+    container_name: "my-app-container"
+    container_ports: "8080:8080"
+    container_env:
+      - "ENV=production"
+      - "DEBUG=false"
+
+  tasks:
+    - name: Read SSH public key
+      ansible.builtin.slurp:
+        src: "{{ ssh_public_key_path }}"
+      register: ssh_pub_key
+
+    - name: Request SSL Certificate from AWS ACM
+      amazon.aws.acm_certificate:
+        domain_name: "{{ certificate_domain }}"
+        validation_method: "{{ certificate_validation_method }}"
+        region: "{{ aws_region }}"
+      register: acm_cert
+
+    - name: Wait for SSL Certificate to be issued
+      amazon.aws.acm_certificate_info:
+        certificate_arn: "{{ acm_cert.certificate_arn }}"
+        region: "{{ aws_region }}"
+      register: cert_status
+      until: cert_status.certificates[0].status == "ISSUED"
+      retries: 15
+      delay: 10
+
+    - name: Create VPC
+      amazon.aws.ec2_vpc_net:
+        name: "rhel9-vpc"
+        cidr_block: "{{ vpc_cidr }}"
+        region: "{{ aws_region }}"
+        tags:
+          Name: "rhel9-vpc"
+      register: vpc
+
+    - name: Create Security Group
+      amazon.aws.ec2_security_group:
+        name: "{{ security_group_name }}"
+        description: "Allow SSH and HTTPS"
+        vpc_id: "{{ vpc.vpc.id }}"
+        region: "{{ aws_region }}"
+        rules:
+          - proto: tcp
+            ports:
+              - 443
+            cidr_ip: "0.0.0.0/0"
+          - proto: tcp
+            ports:
+              - 22
+            cidr_ip: "{{ trusted_ssh_cidr }}"
+      register: security_group
+
+    - name: Launch RHEL 9 Instances
+      amazon.aws.ec2_instance:
+        name: "rhel9-instance-{{ item.az }}"
+        key_name: "{{ key_name }}"
+        region: "{{ aws_region }}"
+        instance_type: "{{ instance_type }}"
+        image_id: "{{ ami_id }}"
+        vpc_subnet_id: "{{ item.subnet.id }}"
+        security_group: "{{ security_group.group_id }}"
+        network:
+          assign_public_ip: yes
+        tags:
+          Name: "rhel9-instance-{{ item.az }}"
+      loop: "{{ subnets }}"
+      register: ec2_instances
+
+    - name: Wait for instances to be ready
+      amazon.aws.ec2_instance_info:
+        region: "{{ aws_region }}"
+        filters:
+          instance-id: "{{ item.instance_ids[0] }}"
+      loop: "{{ ec2_instances.results }}"
+      register: instance_info
+      until: instance_info.instances[0].state.name == "running"
+      retries: 10
+      delay: 15
+
+    - name: Upload SSH Public Key
+      ansible.builtin.authorized_key:
+        user: ec2-user
+        key: "{{ ssh_pub_key['content'] | b64decode }}"
+        state: present
+      become: true
+      delegate_to: "{{ item.instances[0].public_ip_address }}"
+      loop: "{{ instance_info.results }}"
+
+    - name: Register RHEL with Red Hat Subscription Manager
+      ansible.builtin.shell: |
+        subscription-manager register --username={{ rhsm_username }} --password={{ rhsm_password }} --auto-attach || true
+        subscription-manager attach --pool={{ rhsm_pool_id }} || true
+        subscription-manager refresh
+        subscription-manager repos --enable=rhel-9-for-arm-64-baseos-rpms
+      become: true
+      delegate_to: "{{ item.instances[0].public_ip_address }}"
+      loop: "{{ instance_info.results }}"
+
+    - name: Install Podman
+      ansible.builtin.yum:
+        name: podman
+        state: present
+      become: true
+      delegate_to: "{{ item.instances[0].public_ip_address }}"
+      loop: "{{ instance_info.results }}"
+
+    - name: Log in to Container Registry
+      ansible.builtin.shell: >
+        podman login -u {{ registry_username }} -p {{ registry_password }} {{ container_registry }}
+      become: true
+      delegate_to: "{{ item.instances[0].public_ip_address }}"
+      loop: "{{ instance_info.results }}"
+
+    - name: Run Container
+      ansible.builtin.shell: >
+        podman run -d --name {{ container_name }}
+        -p {{ container_ports }}
+        {% for env_var in container_env %}
+        -e {{ env_var }}
+        {% endfor %}
+        {{ container_image }}
+      become: true
+      delegate_to: "{{ item.instances[0].public_ip_address }}"
+      loop: "{{ instance_info.results }}"
+
+    - name: Deploy Load Balancer
+      amazon.aws.elb_application_lb:
+        name: "rhel9-load-balancer"
+        state: present
+        region: "{{ aws_region }}"
+        subnets: "{{ subnets | map(attribute='subnet.id') | list }}"
+        security_groups: ["{{ security_group.group_id }}"]
+        scheme: internet-facing
+        ip_address_type: ipv4
+      register: alb
+
+    - name: Create HTTPS Listener
+      amazon.aws.elb_listener:
+        load_balancer_arn: "{{ alb.load_balancer_arn }}"
+        protocol: HTTPS
+        port: 443
+        ssl_policy: "ELBSecurityPolicy-2016-08"
+        certificate_arn: "{{ acm_cert.certificate_arn }}"
+        default_actions:
+          - type: forward
+            target_group_arn: "{{ target_group.target_group_arn }}"
+        region: "{{ aws_region }}"
+
+    - name: Output Load Balancer URL
+      debug:
+        msg: "Access your application at https://{{ alb.load_balancer.dns_name }}"
