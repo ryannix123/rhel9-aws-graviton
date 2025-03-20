@@ -5,6 +5,15 @@ This guide explains how to create an IAM user with permissions to:
 - Create and manage Application Load Balancers (ALBs) that only accept HTTPS traffic (port 443)
 - Manage SSL certificates with AWS Certificate Manager (ACM)
 
+## Prerequisites
+
+To create this IAM user, you must have administrative access to your AWS account. You can use either:
+
+1. Your AWS root account (the email address you used to create the AWS account)
+2. An existing IAM user that has administrative permissions (with the AdministratorAccess policy or equivalent)
+
+**Security Best Practice:** Use an administrative IAM user instead of your root account whenever possible. The root account should only be used for tasks that specifically require root access.
+
 ## Creating the IAM User and Policy
 
 ### Step 1: Create a Policy Document
