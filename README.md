@@ -8,7 +8,7 @@ Looking for a **faster, better, and cheaper** way to run your workloads on AWS? 
 ✅ **Superior Performance** – AWS Graviton’s custom **ARM-based CPUs** provide up to **40% better price-performance** than x86 alternatives.  
 ✅ **Lower Costs** – Graviton instances are **up to 20% cheaper** than Intel/AMD instances, reducing cloud spend significantly.  
 ✅ **Seamless RHEL Support** – Get all the benefits of **Red Hat’s stability, security, and enterprise support** on **cutting-edge hardware**.  
-✅ **Energy Efficiency** – Graviton’s **optimized power consumption** without sacrificing performance.  
+✅ **Energy Efficiency** – Graviton is **optimized power consumption without sacrificing performance.**  
 
 ---
 
